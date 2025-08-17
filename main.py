@@ -20,7 +20,7 @@ import asyncio
 # Optional Gemini (used for non-Wikipedia questions)
 GEMINI_API_KEY = "AIzaSyCcAsFl6a-f5N6ROJadsY5D650P39cCfwA"  # IMPORTANT: Replace with your actual Gemini API key
 try:
-    if GEMINI_API_KEY and GEMINI_API_KEY != "YOUR_GEMINI_API_KEY":
+    if GEMINI_API_KEY and GEMINI_API_KEY != "AIzaSyCcAsFl6a-f5N6ROJadsY5D650P39cCfwA":
         import google.generativeai as genai
         genai.configure(api_key=GEMINI_API_KEY)
         GEMINI_MODEL = genai.GenerativeModel("gemini-1.5-flash")
