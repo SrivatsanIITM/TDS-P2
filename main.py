@@ -6,7 +6,6 @@ from typing import List, Dict, Any
 import os
 import re
 import base64
-from dotenv import load_dotenv
 from io import BytesIO
 import requests
 import pandas as pd
@@ -20,7 +19,6 @@ import asyncio
 import logging
 
 # Set up logging
-load_dotenv()
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
@@ -119,8 +117,8 @@ def make_scatterplot_data_uri(df: pd.DataFrame) -> str:
     if len(data) < 2: 
         logger.warning("Insufficient data for scatterplot")
         return "Error: Insufficient data for scatterplot"
-    x, y = data["Rank"].values, data["Peak"].values
     try:
+        x, y = data["Rank"].values, data["Peak"].values
         slope, intercept, *_ = stats.linregress(x, y)
         line_x = np.linspace(x.min(), x.max(), 100)
         line_y = slope * line_x + intercept
@@ -149,6 +147,66 @@ def make_scatterplot_data_uri(df: pd.DataFrame) -> str:
         logger.error(f"Error generating scatterplot: {str(e)}")
         return f"Error: Failed to generate scatterplot - {str(e)}"
 
+def make_sales_bar_chart(df: pd.DataFrame) -> str:
+    try:
+        if "region" not in df.columns or "sales" not in df.columns:
+            logger.warning("Region or sales column missing for bar chart")
+            return "Error: Region or sales column missing"
+        sales_by_region = df.groupby("region")["sales"].sum().reset_index()
+        fig = plt.figure(figsize=(4,3), dpi=100)
+        ax = fig.add_subplot(111)
+        ax.bar(sales_by_region["region"], sales_by_region["sales"], color="#3b82f6")
+        ax.set_xlabel("Region"); ax.set_ylabel("Total Sales")
+        ax.set_title("Total Sales by Region")
+        plt.xticks(rotation=45)
+        buf = BytesIO(); plt.tight_layout(pad=0.9)
+        fig.savefig(buf, format="png", dpi=100, bbox_inches="tight"); plt.close(fig)
+        b64 = base64.b64encode(buf.getvalue()).decode()
+        if len(b64) > 100000:
+            fig = plt.figure(figsize=(3.2,2.4), dpi=90)
+            ax = fig.add_subplot(111)
+            ax.bar(sales_by_region["region"], sales_by_region["sales"], color="#3b82f6")
+            ax.set_xlabel("Region"); ax.set_ylabel("Total Sales")
+            plt.xticks(rotation=45)
+            buf = BytesIO(); plt.tight_layout(pad=0.7)
+            fig.savefig(buf, format="png", dpi=90, bbox_inches="tight"); plt.close(fig)
+            b64 = base64.b64encode(buf.getvalue()).decode()
+        return f"data:image/png;base64,{b64}"
+    except Exception as e:
+        logger.error(f"Error generating bar chart: {str(e)}")
+        return f"Error: Failed to generate bar chart - {str(e)}"
+
+def make_cumulative_sales_chart(df: pd.DataFrame) -> str:
+    try:
+        if "date" not in df.columns or "sales" not in df.columns:
+            logger.warning("Date or sales column missing for cumulative sales chart")
+            return "Error: Date or sales column missing"
+        df["date"] = pd.to_datetime(df["date"])
+        df = df.sort_values("date")
+        df["cumulative_sales"] = df["sales"].cumsum()
+        fig = plt.figure(figsize=(4,3), dpi=100)
+        ax = fig.add_subplot(111)
+        ax.plot(df["date"], df["cumulative_sales"], color="#ef4444", linewidth=2)
+        ax.set_xlabel("Date"); ax.set_ylabel("Cumulative Sales")
+        ax.set_title("Cumulative Sales Over Time")
+        plt.xticks(rotation=45)
+        buf = BytesIO(); plt.tight_layout(pad=0.9)
+        fig.savefig(buf, format="png", dpi=100, bbox_inches="tight"); plt.close(fig)
+        b64 = base64.b64encode(buf.getvalue()).decode()
+        if len(b64) > 100000:
+            fig = plt.figure(figsize=(3.2,2.4), dpi=90)
+            ax = fig.add_subplot(111)
+            ax.plot(df["date"], df["cumulative_sales"], color="#ef4444", linewidth=1.8)
+            ax.set_xlabel("Date"); ax.set_ylabel("Cumulative Sales")
+            plt.xticks(rotation=45)
+            buf = BytesIO(); plt.tight_layout(pad=0.7)
+            fig.savefig(buf, format="png", dpi=90, bbox_inches="tight"); plt.close(fig)
+            b64 = base64.b64encode(buf.getvalue()).decode()
+        return f"data:image/png;base64,{b64}"
+    except Exception as e:
+        logger.error(f"Error generating cumulative sales chart: {str(e)}")
+        return f"Error: Failed to generate cumulative sales chart - {str(e)}"
+
 def parse_questions(text: str) -> List[str]:
     logger.debug("Parsing questions")
     lines = text.strip().split("\n")
@@ -175,17 +233,34 @@ def parse_questions(text: str) -> List[str]:
     logger.debug(f"Parsed questions: {filtered_questions}")
     return filtered_questions if filtered_questions else ["No valid questions found"]
 
+def analyze_sales_data(df: pd.DataFrame) -> Dict[str, Any]:
+    try:
+        total_sales = df["sales"].sum()
+        top_region = df.groupby("region")["sales"].sum().idxmax()
+        df["day_of_month"] = pd.to_datetime(df["date"]).dt.day
+        day_sales_correlation = df[["day_of_month", "sales"]].corr().iloc[0,1]
+        bar_chart = make_sales_bar_chart(df)
+        median_sales = df["sales"].median()
+        total_sales_tax = total_sales * 0.1
+        cumulative_sales_chart = make_cumulative_sales_chart(df)
+        return {
+            "total_sales": float(total_sales),
+            "top_region": str(top_region),
+            "day_sales_correlation": float(day_sales_correlation),
+            "bar_chart": bar_chart,
+            "median_sales": float(median_sales),
+            "total_sales_tax": float(total_sales_tax),
+            "cumulative_sales_chart": cumulative_sales_chart
+        }
+    except Exception as e:
+        logger.error(f"Error analyzing sales data: {str(e)}")
+        return {"error": f"Error analyzing sales data: {str(e)}"}
+
 @app.get("/")
 def health(): return {"status": "ok", "name": "Data Analyst Agent API"}
 
 @app.post("/api/")
-async def analyze(request: Request) -> List[Dict[str, str]]:
-    """
-    Accepts multipart/form-data with any field names.
-    - If questions mention the Wikipedia films task, performs scraping + analysis.
-    - Otherwise (and if GEMINI_API_KEY is set), uses Gemini to answer.
-    Returns: JSON array of objects [{"question": str, "answer": str}, ...]
-    """
+async def analyze(request: Request) -> Any:
     logger.debug("Starting analyze endpoint")
     start_time = asyncio.get_event_loop().time()
 
@@ -197,8 +272,9 @@ async def analyze(request: Request) -> List[Dict[str, str]]:
         raise HTTPException(status_code=400, detail="Invalid form data")
 
     questions_text = None
+    sales_file = None
     if form:
-        for _, v in form.multi_items():
+        for k, v in form.multi_items():
             try:
                 from starlette.datastructures import UploadFile as StarUploadFile
             except Exception:
@@ -209,6 +285,9 @@ async def analyze(request: Request) -> List[Dict[str, str]]:
                 if fname.endswith(".txt") or "question" in fname or ctype == "text/plain":
                     questions_text = (await v.read()).decode("utf-8", errors="ignore")
                     logger.debug(f"Read questions.txt: {questions_text[:100]}...")
+                elif fname == "sample-sales.csv" or ctype == "text/csv":
+                    sales_file = await v.read()
+                    logger.debug(f"Read sample-sales.csv: {sales_file[:100]}...")
                 else:
                     _ = await v.read()
 
@@ -222,6 +301,17 @@ async def analyze(request: Request) -> List[Dict[str, str]]:
         raise HTTPException(status_code=400, detail="No valid questions found")
 
     text_lower = questions_text.lower()
+    if "sample-sales.csv" in text_lower:
+        if not sales_file:
+            logger.error("sample-sales.csv mentioned but not provided")
+            return {"error": "sample-sales.csv mentioned but not provided"}
+        try:
+            df = pd.read_csv(BytesIO(sales_file))
+            return analyze_sales_data(df)
+        except Exception as e:
+            logger.error(f"Error reading sample-sales.csv: {str(e)}")
+            return {"error": f"Error reading sample-sales.csv: {str(e)}"}
+
     df = None
     if "wikipedia.org/wiki/list_of_highest-grossing_films" in text_lower or "highest grossing films" in text_lower:
         try:
