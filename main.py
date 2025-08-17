@@ -25,7 +25,7 @@ logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # Optional Gemini (used for non-Wikipedia questions)
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_API_KEY = "AIzaSyCcAsFl6a-f5N6ROJadsY5D650P39cCfwA"
 try:
     if GEMINI_API_KEY:
         import google.generativeai as genai
