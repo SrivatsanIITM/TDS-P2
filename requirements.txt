@@ -14,3 +14,4 @@ pyarrow
 boto3
 python-multipart
 python-dotenv
+lxml
