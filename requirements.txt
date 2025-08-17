@@ -1,0 +1,16 @@
+fastapi
+uvicorn
+openai
+requests
+beautifulsoup4
+pandas
+numpy
+matplotlib
+seaborn
+scipy
+statsmodels
+duckdb
+pyarrow
+boto3
+python-multipart
+python-dotenv
